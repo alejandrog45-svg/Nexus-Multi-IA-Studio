@@ -9,7 +9,7 @@
 
 ## Pendiente
 - Aprobar las mejoras una por una (empezar por #1 y #2: reproducibilidad).
-- Decidir si se escribe una nota en `E:\CONOCIMIENTO DEL NEGOCIO` (es solo lectura segun el arranque y es de la Ferreteria) y la copia del inventario alli.
+- Decidido por el dueno (2026-10-21): NO escribir en `E:\CONOCIMIENTO DEL NEGOCIO`; la nota del proyecto vive solo en W: (este archivo, `CLAUDE.md` y `LEEME_RUTAS.md`).
 - Carpetas temporales de W: a borrar cuando el dueno autorice: `_respaldos\nexus-zip-extraido-2026-10-21`.
 - `claude auth status` del CLI suelto = sin sesion; `codex --version` fallo (codex.js); Ollama/Docker/gemini CLI/gcloud no instalados.
 
