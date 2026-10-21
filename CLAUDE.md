@@ -36,6 +36,8 @@ Plan gratuito: ~20 solicitudes/dia por modelo (error 429 real). Repartir entre m
 - PENDIENTES (requieren decision del dueno): #9 Ollama (descarga/instalacion), #10 agente local de CLIs (riesgo alto), #11 imagen real.
 - Tests: `test/` (unitarias, integracion con Gemini falso, E2E con Chromium headless de W: `playwright-browsers`). No usar herramientas de navegador de E:.
 
+## CIERRE FINAL 2026-10-21: leer `docs/estado-sesion-2026-10-21.md` (pendientes, git sin subir y siguiente prompt). Suite 52/52, lint y build OK. Carpeta `obsoletos/` creada (bun.lock). NO hacer push hasta que el dueno mueva sus claves de `.env.example` a `.env.local`.
+
 ## Cierre de sesion 2026-10-21 (preparacion; sin deploy)
 - Commit inicial `c09d883` en `main` (push OK, repo estaba vacio). No hay deploy: solo preparacion.
 - `npm run lint` OK. `npm install` falla por ERESOLVE (esbuild ^0.25 vs peer de vite 8) y el build solo pasa instalando `react-is` aparte. En W: usar `npm install --legacy-peer-deps --cache "W:\PROYECTOS CUENTA ALEJANDROG45\herramientas-portables\npm-cache-nexus"` (el npm portable apunta a `E:\npm-cache` por defecto).

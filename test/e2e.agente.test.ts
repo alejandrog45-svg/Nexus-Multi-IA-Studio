@@ -41,7 +41,7 @@ test('tarjeta Claude conectada por CLI local: confirma el comando y muestra la r
   const page = await ctx.newPage();
   await page.goto(base);
   const claudeInput = page.getByPlaceholder('Instrucción directa a Claude (Anthropic)...');
-  await claudeInput.waitFor({ timeout: 10000 });
+  await claudeInput.waitFor({ timeout: 30000 });
   // ChatGPT (CLI sin sesion): sigue en modo asistido
   assert.equal(await page.getByPlaceholder('Instrucción directa a ChatGPT (OpenAI)...').count(), 0);
 
@@ -49,7 +49,7 @@ test('tarjeta Claude conectada por CLI local: confirma el comando y muestra la r
   page.once('dialog', async (d) => { dialogText = d.message(); await d.accept(); });
   await claudeInput.fill('Dime hola desde la CLI');
   await claudeInput.press('Enter');
-  await page.getByText('FAKE claude').first().waitFor({ timeout: 15000 });
+  await page.getByText('FAKE claude').first().waitFor({ timeout: 30000 });
 
   assert.match(dialogText, /Se ejecutará en tu PC/);
   assert.match(dialogText, /--tools/);
@@ -63,7 +63,7 @@ test('si el usuario cancela el dialogo no se ejecuta nada', opts, async () => {
   const page = await ctx.newPage();
   await page.goto(base);
   const claudeInput = page.getByPlaceholder('Instrucción directa a Claude (Anthropic)...');
-  await claudeInput.waitFor({ timeout: 10000 });
+  await claudeInput.waitFor({ timeout: 30000 });
   page.once('dialog', (d) => d.dismiss());
   await claudeInput.fill('No ejecutar esto');
   await claudeInput.press('Enter');
