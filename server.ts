@@ -1,5 +1,5 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
+import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
@@ -377,12 +377,22 @@ Responde en español con código limpio y explicaciones concisas.`;
 
 // Mount Vite SPA
 async function startServer() {
-  const vite = await createViteServer({
-    server: { middlewareMode: true, host: '0.0.0.0' },
-    appType: 'spa',
-  });
+  const isProd = process.argv.includes('--prod') || process.env.NODE_ENV === 'production';
 
-  app.use(vite.middlewares);
+  if (isProd) {
+    // Production: serve the built SPA from dist/ (run `npm run build` first)
+    const distDir = path.join(process.cwd(), 'dist');
+    app.use('/api', (_req, res) => res.status(404).json({ error: 'Endpoint no encontrado.' }));
+    app.use(express.static(distDir));
+    app.get('*', (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
+  } else {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true, host: '0.0.0.0' },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Nexus Server] Running at http://0.0.0.0:${PORT}`);
