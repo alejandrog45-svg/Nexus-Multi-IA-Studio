@@ -43,7 +43,7 @@ export const SubscriberAccountModal: React.FC<Props> = ({
       onUpdateSubscription('gemini', {
         connected: ok,
         status: ok ? 'active' : 'error',
-        lastActive: ok ? 'Verificado ahora vía /api/health' : 'Error de conexión',
+        lastActive: ok ? 'Servidor activo y clave configurada (sin llamada de prueba)' : 'Sin clave configurada o backend caído',
       });
     } else {
       // External models require bridge or extension in Phase 6

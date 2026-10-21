@@ -7,6 +7,8 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+// Production mode: `npm start` (--prod) or NODE_ENV=production. Test hooks are disabled in production.
+const IS_PROD = process.argv.includes('--prod') || process.env.NODE_ENV === 'production';
 
 // Body size limit: 2MB max
 app.use(express.json({ limit: '2mb' }));
@@ -183,7 +185,7 @@ app.post('/api/chat', async (req, res) => {
   const { prompt, context, files, model, crossContext, simulateQuotaError } = req.body;
 
   // Test trigger for forced 429
-  if (simulateQuotaError === true || req.headers['x-simulate-quota'] === 'true') {
+  if (!IS_PROD && (simulateQuotaError === true || req.headers['x-simulate-quota'] === 'true')) {
     return res.status(429).json({
       error: 'Se superó el límite de cuota por minuto/día de la API de Gemini. Espera unos momentos antes de reintentar.',
       code: 'QUOTA_EXCEEDED',
@@ -276,7 +278,7 @@ app.post('/api/stream', async (req, res) => {
 
   const { prompt, context, files, model, crossContext, simulateQuotaError } = req.body;
 
-  if (simulateQuotaError === true || req.headers['x-simulate-quota'] === 'true') {
+  if (!IS_PROD && (simulateQuotaError === true || req.headers['x-simulate-quota'] === 'true')) {
     return res.status(429).json({
       error: 'Se superó el límite de cuota por minuto/día de la API de Gemini. Espera unos momentos antes de reintentar.',
       code: 'QUOTA_EXCEEDED',
@@ -377,9 +379,7 @@ Responde en español con código limpio y explicaciones concisas.`;
 
 // Mount Vite SPA
 async function startServer() {
-  const isProd = process.argv.includes('--prod') || process.env.NODE_ENV === 'production';
-
-  if (isProd) {
+  if (IS_PROD) {
     // Production: serve the built SPA from dist/ (run `npm run build` first)
     const distDir = path.join(process.cwd(), 'dist');
     app.use('/api', (_req, res) => res.status(404).json({ error: 'Endpoint no encontrado.' }));

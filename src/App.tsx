@@ -280,7 +280,7 @@ export default function App() {
       const res = await fetch('/api/health');
       if (!res.ok) return false;
       const data = await res.json();
-      return data.status === 'ok';
+      return data.status === 'ok' && data.keyConfigured === true;
     } catch {
       return false;
     }
@@ -294,7 +294,7 @@ export default function App() {
           ...prev.gemini,
           connected: ok,
           status: ok ? 'active' : 'error',
-          lastActive: ok ? 'Streaming SSE verificado' : 'Error en backend',
+          lastActive: ok ? 'Servidor activo y clave configurada (sin llamada de prueba)' : 'Sin clave configurada o backend caído',
         }
       }));
     });
