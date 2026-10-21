@@ -3,6 +3,7 @@ import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { isSensitiveFile } from './src/services/sensitiveFiles';
+import { QuotaTracker, ResponseCache } from './server/quotaCache';
 
 dotenv.config();
 
@@ -130,6 +131,24 @@ const geminiSemaphore = new ConcurrencySemaphore(2);
 const PRIMARY_MODEL = 'gemini-3.1-flash-lite';
 const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 
+// Quota protection (free tier ~20 req/day per model): model pool, daily counters and answer cache.
+// GEMINI_MODELS="m1,m2,m3" overrides the pool; GEMINI_DAILY_LIMIT overrides the per-model daily cap.
+const MODEL_POOL = (process.env.GEMINI_MODELS || `${PRIMARY_MODEL},${FALLBACK_MODEL}`)
+  .split(',').map((m) => m.trim()).filter(Boolean);
+const quota = new QuotaTracker(MODEL_POOL, Number(process.env.GEMINI_DAILY_LIMIT) || 20);
+const answerCache = new ResponseCache();
+
+// GEMINI_BASE_URL is only meant for automated tests (fake Gemini server); leave unset in real use.
+const makeAI = (apiKey: string) =>
+  new GoogleGenAI(process.env.GEMINI_BASE_URL ? { apiKey, httpOptions: { baseUrl: process.env.GEMINI_BASE_URL } } : { apiKey });
+
+const isQuotaErr = (err: any) =>
+  err?.status === 429 || /429|quota|RESOURCE_EXHAUSTED/i.test(String(err?.message || ''));
+const isTransientErr = (err: any) =>
+  err?.status === 503 || /503|high demand|UNAVAILABLE/i.test(String(err?.message || ''));
+const NO_QUOTA_MSG =
+  'Se agotó la cuota gratuita local de todos los modelos configurados por hoy. Reintenta más tarde o amplía GEMINI_MODELS.';
+
 // GET /api/health - Safe, minimal health endpoint
 app.get('/api/health', (req, res) => {
   const hasKey = !!(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY);
@@ -140,6 +159,11 @@ app.get('/api/health', (req, res) => {
     fallbackModel: FALLBACK_MODEL,
     concurrency: geminiSemaphore.getStats(),
   });
+});
+
+// GET /api/quota - Local view of today's usage per model (counts only what this server sent)
+app.get('/api/quota', (_req, res) => {
+  res.json({ ...quota.stats(), cachedAnswers: answerCache.size() });
 });
 
 // Helper for backoff calls
@@ -206,7 +230,7 @@ app.post('/api/chat', async (req, res) => {
 
   const release = await geminiSemaphore.acquire();
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = makeAI(apiKey);
 
     let fileSummaries = '';
     if (Array.isArray(files) && files.length > 0) {
@@ -223,26 +247,43 @@ ${crossContext ? `APORTES DE OTROS AGENTES:\n${String(crossContext).slice(0, 400
 Responde en español de forma rigurosa y técnica.`;
 
     const fullPrompt = `${systemInstruction}\n\nSOLICITUD:\n${prompt}`;
-    const targetModel = model || PRIMARY_MODEL;
 
-    let geminiResponse;
-    let modelUsed = targetModel;
-    try {
-      geminiResponse = await callGeminiWithBackoff(ai, targetModel, fullPrompt, 1);
-    } catch (primaryErr: any) {
-      if (targetModel !== FALLBACK_MODEL) {
-        console.warn(`[Fallback] Switching to ${FALLBACK_MODEL}...`);
-        modelUsed = FALLBACK_MODEL;
-        geminiResponse = await callGeminiWithBackoff(ai, FALLBACK_MODEL, fullPrompt, 1);
-      } else {
-        throw primaryErr;
+    const cacheKey = ResponseCache.key({ kind: 'chat', prompt, context: String(context || ''), fileSummaries, crossContext: String(crossContext || '') });
+    const cached = answerCache.get(cacheKey);
+    if (cached !== null) {
+      return res.json({ text: cached, usageMetadata: null, latencyMs: Date.now() - startTime, modelUsed: 'cache', cached: true });
+    }
+
+    const candidates = quota.order(typeof model === 'string' ? model : undefined);
+    if (candidates.length === 0) {
+      return res.status(429).json({ error: NO_QUOTA_MSG, code: 'QUOTA_EXCEEDED_LOCAL', latencyMs: Date.now() - startTime });
+    }
+
+    let geminiResponse: any = null;
+    let modelUsed = '';
+    let lastErr: any = null;
+    for (const m of candidates) {
+      try {
+        geminiResponse = await ai.models.generateContent({ model: m, contents: fullPrompt });
+        quota.record(m);
+        modelUsed = m;
+        break;
+      } catch (e: any) {
+        lastErr = e;
+        if (isQuotaErr(e)) {
+          quota.markLimited(m, String(e?.message || ''));
+        } else if (!isTransientErr(e)) {
+          throw e;
+        }
+        console.warn(`[Rotation] ${m} failed (${isQuotaErr(e) ? 'quota' : 'transient'}); trying next model...`);
       }
     }
 
     if (!geminiResponse) {
-      throw new Error('No se recibió respuesta válida del modelo Gemini.');
+      throw lastErr || new Error('No se recibió respuesta válida del modelo Gemini.');
     }
 
+    answerCache.set(cacheKey, geminiResponse.text || '');
     const latencyMs = Date.now() - startTime;
     return res.json({
       text: geminiResponse.text || '',
@@ -304,14 +345,16 @@ app.post('/api/stream', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
+  // Listen on `res`: in modern Node `req` emits 'close' as soon as the request body is read,
+  // which would wrongly look like a client disconnect and cut the stream.
   let clientDisconnected = false;
-  req.on('close', () => {
-    clientDisconnected = true;
+  res.on('close', () => {
+    if (!res.writableFinished) clientDisconnected = true;
   });
 
   const release = await geminiSemaphore.acquire();
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = makeAI(apiKey);
 
     let fileSummaries = '';
     if (Array.isArray(files) && files.length > 0) {
@@ -328,40 +371,66 @@ ${crossContext ? `APORTES DE OTROS AGENTES:\n${String(crossContext).slice(0, 400
 Responde en español con código limpio y explicaciones concisas.`;
 
     const fullPrompt = `${systemInstruction}\n\nSOLICITUD:\n${prompt}`;
-    const targetModel = model || PRIMARY_MODEL;
-    let streamResult;
-    let modelUsed = targetModel;
 
-    try {
-      streamResult = await ai.models.generateContentStream({
-        model: targetModel,
-        contents: fullPrompt,
-      });
-    } catch (streamErr: any) {
-      if (targetModel !== FALLBACK_MODEL) {
-        console.warn(`[SSE Stream Fallback] Switching to ${FALLBACK_MODEL}...`);
-        modelUsed = FALLBACK_MODEL;
-        streamResult = await ai.models.generateContentStream({
-          model: FALLBACK_MODEL,
-          contents: fullPrompt,
-        });
-      } else {
-        throw streamErr;
-      }
+    const cacheKey = ResponseCache.key({ kind: 'stream', prompt, context: String(context || ''), fileSummaries, crossContext: String(crossContext || '') });
+    const cached = answerCache.get(cacheKey);
+    if (cached !== null) {
+      res.write(`data: ${JSON.stringify({ text: cached })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true, modelUsed: 'cache', usageMetadata: null, cached: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    const candidates = quota.order(typeof model === 'string' ? model : undefined);
+    if (candidates.length === 0) {
+      res.write(`data: ${JSON.stringify({ error: NO_QUOTA_MSG, code: 'QUOTA_EXCEEDED_LOCAL' })}\n\n`);
+      res.end();
+      return;
     }
 
     let usageMetadata: any = null;
-    for await (const chunk of streamResult) {
-      if (clientDisconnected) {
-        console.log('[SSE Stream] Client aborted request.');
+    let modelUsed = '';
+    let fullText = '';
+    let wroteText = false;
+    let succeeded = false;
+    let lastErr: any = null;
+
+    for (const m of candidates) {
+      try {
+        const streamResult = await ai.models.generateContentStream({ model: m, contents: fullPrompt });
+        for await (const chunk of streamResult) {
+          if (clientDisconnected) {
+            console.log('[SSE Stream] Client aborted request.');
+            break;
+          }
+          if (chunk.usageMetadata) usageMetadata = chunk.usageMetadata;
+          const chunkText = chunk.text || '';
+          if (chunkText) {
+            wroteText = true;
+            fullText += chunkText;
+            res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+          }
+        }
+        quota.record(m);
+        modelUsed = m;
+        succeeded = true;
         break;
-      }
-      if (chunk.usageMetadata) usageMetadata = chunk.usageMetadata;
-      const chunkText = chunk.text || '';
-      if (chunkText) {
-        res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+      } catch (e: any) {
+        lastErr = e;
+        // Only rotate if nothing was sent to the client yet (never mix two models in one answer)
+        if (!wroteText && (isQuotaErr(e) || isTransientErr(e))) {
+          if (isQuotaErr(e)) quota.markLimited(m, String(e?.message || ''));
+          console.warn(`[SSE Rotation] ${m} failed; trying next model...`);
+          continue;
+        }
+        throw e;
       }
     }
+
+    if (!succeeded && !clientDisconnected) {
+      throw lastErr || new Error('No se recibió respuesta del modelo.');
+    }
+    if (succeeded && !clientDisconnected) answerCache.set(cacheKey, fullText);
 
     if (!clientDisconnected) {
       res.write(`data: ${JSON.stringify({ done: true, modelUsed, usageMetadata })}\n\n`);
@@ -401,7 +470,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Nexus Server] Running at http://0.0.0.0:${PORT}`);
-    console.log(`[Nexus Server] Endpoints: GET /api/health, POST /api/chat, POST /api/stream`);
+    console.log(`[Nexus Server] Endpoints: GET /api/health, GET /api/quota, POST /api/chat, POST /api/stream`);
   });
 }
 
