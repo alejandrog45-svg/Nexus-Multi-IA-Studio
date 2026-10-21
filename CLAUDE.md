@@ -38,3 +38,8 @@ Plan gratuito: ~20 solicitudes/dia por modelo (error 429 real). Repartir entre m
 - Real: proxy Express (/api/chat, /api/stream en codigo), clave solo en servidor, IndexedDB y sandbox en codigo. NO verificado en ejecucion: stream, imagen, IndexedDB, File System Access. Solo Gemini es IA real; ChatGPT/Claude/Meta = Modo Asistido manual.
 - Diagnostico, riesgos y plan de 11 mejoras: `docs/DIAGNOSTICO_2026-10-21.md`. Estado y siguiente prompt: `docs/estado-sesion-2026-10-21.md`.
 - Inventario de herramientas/cuentas (con correos): `.local/` (ignorado por git; no subir).
+
+## Revision 2026-10-21 (sesion en la nube, desde el celular)
+- Repo en `main` = rama de trabajo (`c51b87c`); sin PR ni deploy. `npm ci --legacy-peer-deps`, lint y build OK; `npm test`: 19 pruebas, 16 OK, 0 fallan (3 omitidas, E2E sin Chromium de W:).
+- URL publica: NO existe. Desde el contenedor no se puede exponer un puerto. La app necesita servidor Node (proxy Gemini), por lo que GitHub Pages no sirve. Opcion gratuita pendiente de decision: Render / Cloud Run con `GEMINI_API_KEY` como variable de entorno. Riesgo: URL publica = cualquiera gasta la cuota (~20/dia); anadir proteccion de acceso antes de publicar.
+- Nota: `E:` y `W:` no son accesibles desde la nube; la carpeta de conocimiento del negocio se actualiza al volver al PC.
