@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { AttachedFile } from '../types';
+import { isSensitiveFile, isSensitiveFileName, hasSensitiveContent } from '../services/sensitiveFiles';
 import { 
   Upload, FileText, Code2, Plus, 
   Trash2, Edit3, Check, X, Download, FolderOpen, 
@@ -59,6 +60,7 @@ export const FileManager: React.FC<Props> = ({
             if (file.size > 1024 * 1024) continue; // max 1MB per file
 
             const text = await file.text();
+            if (isSensitiveFile(entry.name, text)) continue; // never load secrets from the local folder
             const newFile: AttachedFile = {
               id: `local_${entry.name}_${Date.now()}`,
               name: entry.name,
@@ -90,7 +92,11 @@ export const FileManager: React.FC<Props> = ({
     if (!uploadedFiles || uploadedFiles.length === 0) return;
 
     Array.from(uploadedFiles).forEach((file) => {
-      const isText = file.type.startsWith('text/') || 
+      if (isSensitiveFileName(file.name)) {
+        alert(`"${file.name}" parece contener secretos (claves, tokens o credenciales) y no se carga para proteger tus datos.`);
+        return;
+      }
+      const isText =file.type.startsWith('text/') || 
         /\.(js|jsx|ts|tsx|py|html|css|json|md|csv|sql|env|xml|yaml|yml|sh|c|cpp|rs|go|php)$/i.test(file.name);
 
       const reader = new FileReader();
@@ -98,6 +104,10 @@ export const FileManager: React.FC<Props> = ({
       if (isText) {
         reader.onload = (event) => {
           const content = event.target?.result as string || '';
+          if (hasSensitiveContent(content)) {
+            alert(`"${file.name}" contiene lo que parece una clave o token y no se carga para proteger tus datos.`);
+            return;
+          }
           const newFile: AttachedFile = {
             id: `file_${Date.now()}_${Math.random().toString(36).substring(7)}`,
             name: file.name,

@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { isSensitiveFile } from './src/services/sensitiveFiles';
 
 dotenv.config();
 
@@ -210,7 +211,7 @@ app.post('/api/chat', async (req, res) => {
     let fileSummaries = '';
     if (Array.isArray(files) && files.length > 0) {
       fileSummaries = files
-        .filter((f: any) => f && f.includedInContext)
+        .filter((f: any) => f && f.includedInContext && !isSensitiveFile(String(f.name || ''), f.isText ? String(f.content || '') : ''))
         .map((f: any) => `[Archivo: ${String(f.name || 'documento')} (${String(f.type || 'text')})]\n${f.isText ? String(f.content || '').slice(0, 4000) : '[Binario]'}`)
         .join('\n\n');
     }
@@ -315,7 +316,7 @@ app.post('/api/stream', async (req, res) => {
     let fileSummaries = '';
     if (Array.isArray(files) && files.length > 0) {
       fileSummaries = files
-        .filter((f: any) => f && f.includedInContext)
+        .filter((f: any) => f && f.includedInContext && !isSensitiveFile(String(f.name || ''), f.isText ? String(f.content || '') : ''))
         .map((f: any) => `[Archivo: ${String(f.name || 'documento')}]\n${f.isText ? String(f.content || '').slice(0, 4000) : '[Binario]'}`)
         .join('\n\n');
     }
