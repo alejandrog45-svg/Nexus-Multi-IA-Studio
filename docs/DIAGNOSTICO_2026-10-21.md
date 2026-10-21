@@ -1,4 +1,4 @@
-# Diagnostico 2026-10-21 (solo lectura, nada implementado)
+# Diagnostico 2026-10-21 (hallazgos originales; mejoras #1-#5, #7, #8 ya implementadas: ver CLAUDE.md)
 
 Base: commit `c09d883`. Todo lo marcado VERIFICADO se abrio en esa sesion. Nada se ejecuto contra Gemini (cuota).
 
