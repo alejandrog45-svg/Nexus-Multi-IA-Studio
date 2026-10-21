@@ -286,6 +286,27 @@ export default function App() {
     }
   };
 
+  // Which free support providers have a key on the server (Groq powers the Meta AI / Llama card)
+  useEffect(() => {
+    fetch('/api/providers')
+      .then(r => (r.ok ? r.json() : null))
+      .then((data) => {
+        const groq = data?.providers?.find((p: any) => p.id === 'groq');
+        if (!groq?.configured) return;
+        setSubscriptions(prev => ({
+          ...prev,
+          meta: {
+            ...prev.meta,
+            connected: true,
+            status: 'active',
+            planName: `Groq gratis · ${groq.model}`,
+            lastActive: 'Clave de Groq configurada en el servidor (sin llamada de prueba)',
+          },
+        }));
+      })
+      .catch(() => { /* sin backend: la tarjeta sigue en Modo Asistido */ });
+  }, []);
+
   useEffect(() => {
     handleCheckGeminiHealth().then((ok) => {
       setSubscriptions(prev => ({
@@ -428,8 +449,12 @@ export default function App() {
           controller.signal
         );
 
+        // If Gemini's quota ran out, the server answered with a free backup model: say so in the card.
+        const backupModel = result.modelUsed?.startsWith('openrouter:') ? result.modelUsed.slice('openrouter:'.length) : null;
         setMessages(prev =>
-          prev.map(m => m.id === aiMsgId ? { ...m, isStreaming: false } : m)
+          prev.map(m => m.id === aiMsgId
+            ? { ...m, isStreaming: false, ...(backupModel ? { senderName: `Respaldo (sin cuota de Gemini) · ${backupModel} vía OpenRouter` } : {}) }
+            : m)
         );
 
         addNotification({
@@ -458,6 +483,36 @@ export default function App() {
       } finally {
         activeAbortController.current = null;
         setIsProcessing(prev => ({ ...prev, gemini: false }));
+      }
+    } else if (modelId === 'meta' && subscriptions.meta.connected) {
+      // Llama (Meta) served by Groq through the backend; the real provider is shown in the sender name.
+      setIsProcessing(prev => ({ ...prev, meta: true }));
+      try {
+        const result = await orchestrator.generateProviderResponse('groq', customPrompt, projectContext, files);
+        setMessages(prev => [...prev, {
+          id: `msg_meta_${Date.now()}`,
+          modelId: 'meta',
+          senderName: `${subscriptions.meta.name} · ${result.modelUsed} vía Groq`,
+          content: result.text,
+          timestamp: new Date().toLocaleTimeString(),
+        }]);
+        addNotification({
+          title: 'Respuesta recibida',
+          message: `Llama respondió vía Groq (${result.latencyMs} ms).`,
+          type: 'ai_finished',
+          modelId: 'meta',
+          sourceAI: 'Meta AI',
+        });
+      } catch (err: any) {
+        addNotification({
+          title: 'Error de Consulta',
+          message: err.message || 'Error al comunicar con Groq.',
+          type: 'intervention_needed',
+          modelId: 'meta',
+          actionLabel: 'Revisar',
+        });
+      } finally {
+        setIsProcessing(prev => ({ ...prev, meta: false }));
       }
     } else {
       addNotification({

@@ -43,11 +43,15 @@ export const SplitViewGrid: React.FC<Props> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Direct (API-backed) cards: Gemini always; Meta/Llama only when the server has a Groq key.
+  const isDirectModel = (modelId: AIModelId) =>
+    modelId === 'gemini' || (modelId === 'meta' && subscriptions[modelId].connected);
+
   const handleIndividualSubmit = (modelId: AIModelId) => {
     const text = individualPrompts[modelId]?.trim();
     if (!text) return;
 
-    if (modelId === 'gemini') {
+    if (isDirectModel(modelId)) {
       onSendToModel(modelId, text);
       setIndividualPrompts(prev => ({ ...prev, [modelId]: '' }));
     } else {
@@ -130,13 +134,13 @@ export const SplitViewGrid: React.FC<Props> = ({
                 <div className="h-full flex flex-col items-center justify-center p-6 text-center space-y-3">
                   <div className="w-10 h-10 rounded-full border-2 border-amber-500/20 border-t-amber-400 animate-spin" />
                   <p className="text-xs text-slate-300 font-medium">
-                    Consultando API real de Gemini...
+                    Consultando API real de {sub.name}...
                   </p>
                   <p className="text-[11px] text-slate-500">
                     Procesando a través del backend proxy
                   </p>
                 </div>
-              ) : !isConnected && modelId !== 'gemini' ? (
+              ) : !isConnected && !isDirectModel(modelId) ? (
                 <div className="h-full flex flex-col items-center justify-center p-5 text-center text-slate-400 space-y-3">
                   <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-400">
                     <Bot className="w-5 h-5" />
@@ -285,8 +289,8 @@ export const SplitViewGrid: React.FC<Props> = ({
                 <input
                   type="text"
                   placeholder={
-                    modelId === 'gemini' 
-                      ? `Instrucción directa a ${sub.name}...` 
+                    isDirectModel(modelId)
+                      ? `Instrucción directa a ${sub.name}...`
                       : `Copiar prompt para ${sub.company}...`
                   }
                   value={individualPrompts[modelId]}
@@ -303,9 +307,9 @@ export const SplitViewGrid: React.FC<Props> = ({
                   onClick={() => handleIndividualSubmit(modelId)}
                   disabled={loading}
                   className="p-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors disabled:opacity-50 cursor-pointer"
-                  title={modelId === 'gemini' ? 'Enviar a Gemini' : 'Copiar y abrir en proveedor'}
+                  title={isDirectModel(modelId) ? `Enviar a ${sub.name}` : 'Copiar y abrir en proveedor'}
                 >
-                  {modelId === 'gemini' ? (
+                  {isDirectModel(modelId) ? (
                     <Send className="w-3.5 h-3.5" />
                   ) : (
                     <ExternalLink className="w-3.5 h-3.5" />

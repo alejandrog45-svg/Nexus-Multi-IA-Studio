@@ -25,11 +25,12 @@ Plan gratuito: ~20 solicitudes/dia por modelo (error 429 real). Repartir entre m
 - Fase 2 incompleta: `/api/stream` sin verificar, imagen sin verificar por cuota, persistencia IndexedDB y File System Access sin probar.
 - Esta sesion solo preparo el proyecto y diagnostico; no se implemento nada. Detalle del diagnostico: ver cierre abajo.
 
-## Avance de mejoras 2026-10-21 (un commit por mejora, todas verificadas con `npm test`: 19/19, lint y build OK)
-- HECHAS: #1 instalacion reproducible, #2 servir dist/ (`npm start`), #3 rotacion de modelos + contador + cache + `/api/quota`, #4 gancho de cuota simulada solo en dev + estado "conectado" honesto, #5 metricas con modelo y tokens reales, #7 pruebas E2E (IndexedDB, respaldo, carpeta local), #8 filtro de archivos sensibles (cliente y servidor).
+## Avance de mejoras 2026-10-21 (un commit por mejora, todas verificadas con `npm test`: 29/29, lint y build OK)
+- HECHAS: #1 instalacion reproducible, #2 servir dist/ (`npm start`), #3 rotacion de modelos + contador + cache + `/api/quota`, #4 gancho de cuota simulada solo en dev + estado "conectado" honesto, #5 metricas con modelo y tokens reales, #6 (ver abajo), #7 pruebas E2E (IndexedDB, respaldo, carpeta local), #8 filtro de archivos sensibles (cliente y servidor).
 - BUG REAL CORREGIDO: `/api/stream` cortaba la respuesta porque escuchaba `req.on('close')` (en Node moderno se dispara al leer el cuerpo). Ahora usa `res`.
 - Verificado solo contra un Gemini FALSO local (`GEMINI_BASE_URL`); falta 1 prueba con clave real (consume 1 de las ~20 diarias).
-- PENDIENTES (requieren decision del dueno): #6 Groq/OpenRouter (hay que crear claves gratuitas), #9 Ollama (descarga/instalacion), #10 agente local de CLIs (riesgo alto), #11 imagen real.
+- #6 HECHA: Groq (Llama) alimenta la tarjeta Meta AI y OpenRouter (Gemma) es respaldo automatico de Gemini sin cuota, siempre rotulados con proveedor y modelo reales; claves solo en .env.local (GROQ_API_KEY, OPENROUTER_API_KEY). Probado con proveedores falsos y demo en vivo en Chrome; FALTA probar con claves reales (el .env.local no existia en la carpeta del proyecto al terminar).
+- PENDIENTES (requieren decision del dueno): #9 Ollama (descarga/instalacion), #10 agente local de CLIs (riesgo alto), #11 imagen real.
 - Tests: `test/` (unitarias, integracion con Gemini falso, E2E con Chromium headless de W: `playwright-browsers`). No usar herramientas de navegador de E:.
 
 ## Cierre de sesion 2026-10-21 (preparacion; sin deploy)

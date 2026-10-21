@@ -4,8 +4,10 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { isSensitiveFile } from './src/services/sensitiveFiles';
 import { QuotaTracker, ResponseCache } from './server/quotaCache';
+import { PROVIDER_IDS, ProviderError, ProviderId, chatCompletion, isProviderId, listProviders, providerConfig } from './server/providers';
 
-dotenv.config();
+// .env.local takes precedence over .env (both ignored by git)
+dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -163,7 +165,90 @@ app.get('/api/health', (req, res) => {
 
 // GET /api/quota - Local view of today's usage per model (counts only what this server sent)
 app.get('/api/quota', (_req, res) => {
-  res.json({ ...quota.stats(), cachedAnswers: answerCache.size() });
+  res.json({ ...quota.stats(), cachedAnswers: answerCache.size(), providers: providerQuota.stats() });
+});
+
+// --- Free support providers (Groq, OpenRouter): keys live only in server env vars ---
+const providerQuota = new QuotaTracker(PROVIDER_IDS, Number(process.env.PROVIDER_DAILY_LIMIT) || 200);
+const providerSemaphore = new ConcurrencySemaphore(2);
+
+function summarizeFiles(files: any): string {
+  if (!Array.isArray(files)) return '';
+  return files
+    .filter((f: any) => f && f.includedInContext && !isSensitiveFile(String(f.name || ''), f.isText ? String(f.content || '') : ''))
+    .map((f: any) => `[Archivo: ${String(f.name || 'documento')}]\n${f.isText ? String(f.content || '').slice(0, 4000) : '[Binario]'}`)
+    .join('\n\n');
+}
+
+function providerSystem(who: string, context: any, fileSummaries: string, crossContext: any): string {
+  return `Eres ${who}, participante del estudio Nexus Multi-IA.
+${context ? `CONTEXTO DEL PROYECTO:\n${String(context).slice(0, 6000)}\n` : ''}
+${fileSummaries ? `ARCHIVOS:\n${fileSummaries}\n` : ''}
+${crossContext ? `APORTES DE OTROS AGENTES:\n${String(crossContext).slice(0, 4000)}\n` : ''}
+Responde en español de forma rigurosa y técnica.`;
+}
+
+async function askProvider(id: ProviderId, system: string, userText: string) {
+  const cfg = providerConfig(id);
+  if (!cfg.configured) throw new ProviderError(`${cfg.label}: clave no configurada en el servidor.`, 503, false);
+  if (!providerQuota.order().includes(id)) throw new ProviderError(`${cfg.label}: límite local de uso alcanzado por ahora.`, 429, true);
+  const release = await providerSemaphore.acquire();
+  try {
+    const answer = await chatCompletion(cfg, system, userText);
+    providerQuota.record(id);
+    return answer;
+  } catch (e: any) {
+    if (e instanceof ProviderError && e.quota) providerQuota.markLimited(id, e.message);
+    throw e;
+  } finally {
+    release();
+  }
+}
+
+/** Automatic backup for Gemini when its quota is exhausted: Gemma via OpenRouter, clearly labeled. Null if unavailable. */
+async function openRouterFallback(prompt: string, context: any, fileSummaries: string, crossContext: any) {
+  if (!providerConfig('openrouter').configured) return null;
+  try {
+    return await askProvider('openrouter', providerSystem('un asistente de respaldo (modelo gratuito vía OpenRouter)', context, fileSummaries, crossContext), prompt);
+  } catch {
+    return null;
+  }
+}
+
+// GET /api/providers - which support providers are configured (never returns keys)
+app.get('/api/providers', (_req, res) => {
+  res.json({ providers: listProviders() });
+});
+
+// POST /api/provider/chat - one question to Groq or OpenRouter
+app.post('/api/provider/chat', async (req, res) => {
+  const startTime = Date.now();
+  const { provider, prompt, context, files, crossContext } = req.body || {};
+  if (!isProviderId(provider)) return res.status(400).json({ error: 'Proveedor no válido.' });
+  if (!prompt || typeof prompt !== 'string') return res.status(400).json({ error: 'El campo "prompt" es requerido y debe ser texto.' });
+  if (prompt.length > 50000) return res.status(400).json({ error: 'El prompt excede el límite máximo permitido (50,000 caracteres).' });
+
+  const fileSummaries = summarizeFiles(files);
+  const cfg = providerConfig(provider);
+  const cacheKey = ResponseCache.key({ kind: `provider:${provider}:${cfg.model}`, prompt, context: String(context || ''), fileSummaries, crossContext: String(crossContext || '') });
+  const cached = answerCache.get(cacheKey);
+  if (cached !== null) {
+    return res.json({ text: cached, usageMetadata: null, latencyMs: Date.now() - startTime, modelUsed: 'cache', provider, cached: true });
+  }
+
+  try {
+    const who = provider === 'groq' ? 'Llama (Meta AI), servido por Groq' : 'un modelo gratuito servido por OpenRouter';
+    const answer = await askProvider(provider, providerSystem(who, context, fileSummaries, crossContext), prompt);
+    answerCache.set(cacheKey, answer.text);
+    return res.json({ text: answer.text, usageMetadata: answer.usageMetadata, latencyMs: Date.now() - startTime, modelUsed: answer.model, provider });
+  } catch (e: any) {
+    const status = e instanceof ProviderError ? e.status : 500;
+    return res.status(status).json({
+      error: e?.message || 'Error al comunicar con el proveedor.',
+      code: e instanceof ProviderError && e.quota ? 'QUOTA_EXCEEDED' : 'PROVIDER_ERROR',
+      latencyMs: Date.now() - startTime,
+    });
+  }
 });
 
 // Helper for backoff calls
@@ -255,8 +340,14 @@ Responde en español de forma rigurosa y técnica.`;
     }
 
     const candidates = quota.order(typeof model === 'string' ? model : undefined);
+    const chatFallback = async () => {
+      const fb = await openRouterFallback(prompt, context, fileSummaries, crossContext);
+      if (!fb) return null;
+      answerCache.set(cacheKey, fb.text);
+      return res.json({ text: fb.text, usageMetadata: fb.usageMetadata, latencyMs: Date.now() - startTime, modelUsed: `openrouter:${fb.model}`, fallback: true });
+    };
     if (candidates.length === 0) {
-      return res.status(429).json({ error: NO_QUOTA_MSG, code: 'QUOTA_EXCEEDED_LOCAL', latencyMs: Date.now() - startTime });
+      return (await chatFallback()) || res.status(429).json({ error: NO_QUOTA_MSG, code: 'QUOTA_EXCEEDED_LOCAL', latencyMs: Date.now() - startTime });
     }
 
     let geminiResponse: any = null;
@@ -280,6 +371,10 @@ Responde en español de forma rigurosa y técnica.`;
     }
 
     if (!geminiResponse) {
+      if (lastErr && isQuotaErr(lastErr)) {
+        const sent = await chatFallback();
+        if (sent) return sent;
+      }
       throw lastErr || new Error('No se recibió respuesta válida del modelo Gemini.');
     }
 
@@ -382,7 +477,17 @@ Responde en español con código limpio y explicaciones concisas.`;
     }
 
     const candidates = quota.order(typeof model === 'string' ? model : undefined);
+    const streamFallback = async (): Promise<boolean> => {
+      const fb = await openRouterFallback(prompt, context, fileSummaries, crossContext);
+      if (!fb) return false;
+      answerCache.set(cacheKey, fb.text);
+      res.write(`data: ${JSON.stringify({ text: fb.text })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true, modelUsed: `openrouter:${fb.model}`, usageMetadata: fb.usageMetadata, fallback: true })}\n\n`);
+      res.end();
+      return true;
+    };
     if (candidates.length === 0) {
+      if (await streamFallback()) return;
       res.write(`data: ${JSON.stringify({ error: NO_QUOTA_MSG, code: 'QUOTA_EXCEEDED_LOCAL' })}\n\n`);
       res.end();
       return;
@@ -428,6 +533,7 @@ Responde en español con código limpio y explicaciones concisas.`;
     }
 
     if (!succeeded && !clientDisconnected) {
+      if (!wroteText && lastErr && isQuotaErr(lastErr) && (await streamFallback())) return;
       throw lastErr || new Error('No se recibió respuesta del modelo.');
     }
     if (succeeded && !clientDisconnected) answerCache.set(cacheKey, fullText);

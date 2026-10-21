@@ -109,7 +109,7 @@ export class AIOrchestratorService {
     onChunk: (textChunk: string) => void,
     signal?: AbortSignal,
     crossContext?: string
-  ): Promise<{ text: string; latencyMs: number }> {
+  ): Promise<{ text: string; latencyMs: number; modelUsed: string }> {
     const startTime = performance.now();
     let accumulatedText = '';
     let modelUsed = '';
@@ -195,7 +195,7 @@ export class AIOrchestratorService {
         success: true,
       });
 
-      return { text: accumulatedText, latencyMs };
+      return { text: accumulatedText, latencyMs, modelUsed };
     } catch (err: any) {
       const latencyMs = Math.round(performance.now() - startTime);
       if (err.name === 'AbortError') {
@@ -294,6 +294,53 @@ export class AIOrchestratorService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Asks a free support provider (Groq / OpenRouter) through the backend proxy (/api/provider/chat).
+   * The provider keys live only on the server.
+   */
+  async generateProviderResponse(
+    provider: 'groq' | 'openrouter',
+    prompt: string,
+    context: string,
+    files: AttachedFile[],
+    crossContext?: string
+  ): Promise<{ text: string; latencyMs: number; modelUsed: string }> {
+    const startTime = performance.now();
+    const record = (model: string, usage: any, success: boolean, error?: string) =>
+      metricsStore.addRecord({
+        id: `metric_${Date.now()}`,
+        model: `${model} (${provider})`,
+        promptTokens: usage?.promptTokenCount || 0,
+        candidatesTokens: usage?.candidatesTokenCount || 0,
+        totalTokens: usage?.totalTokenCount || 0,
+        latencyMs: Math.round(performance.now() - startTime),
+        timestamp: new Date().toLocaleTimeString(),
+        success,
+        error,
+      });
+
+    let response: Response;
+    try {
+      response = await fetch('/api/provider/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, prompt, context, files: files.filter(f => f.includedInContext), crossContext }),
+      });
+    } catch (err: any) {
+      record(provider, null, false, err.message || 'Error de conexión');
+      throw err;
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const msg = data.error || `Error del servidor (${response.status})`;
+      record(provider, null, false, msg);
+      throw new Error(msg);
+    }
+    record(data.modelUsed || provider, data.usageMetadata, true);
+    return { text: data.text, latencyMs: Math.round(performance.now() - startTime), modelUsed: data.modelUsed };
   }
 
   /**
