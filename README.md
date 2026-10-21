@@ -18,7 +18,7 @@ npm test                         # unitarias + integracion (Gemini falso) + E2E 
 En W: usar `npm ... --cache "W:\PROYECTOS CUENTA ALEJANDROG45\herramientas-portables\npm-cache-nexus"` (el npm portable apunta por defecto a `E:\npm-cache`).
 
 ## Agente local (Claude Code y Codex con tu propia suscripcion)
-Apagado por defecto. Para activarlo: `LOCAL_AGENT=1 npm start` y haber iniciado sesion TU en cada CLI (`claude auth login`, `codex login`). La tarjeta de Claude o ChatGPT solo aparece conectada si la CLI esta instalada y con sesion.
+Apagado por defecto. Para activarlo: `LOCAL_AGENT=1 npm start` (o la linea `LOCAL_AGENT=1` en `.env.local`) y haber iniciado sesion TU en cada CLI (`claude auth login`; Codex: la app ChatGPT de escritorio ya trae `codex.exe` en `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\`, que se detecta solo, y comparte tu sesion "Sign in with ChatGPT"; alternativa: `AGENT_CODEX_EXE=ruta\codex.exe`). La tarjeta de Claude o ChatGPT solo aparece conectada si la CLI esta instalada y con sesion.
 - Barreras: solo desde esta maquina y la propia app (mismo origen), token por sesion, comandos fijos (`claude -p --tools ""`, `codex exec --sandbox read-only`), el texto va por stdin, carpeta de trabajo vacia (`.local/agent-scratch`), sin claves del servidor en el entorno de la CLI, y una confirmacion con el comando exacto antes de CADA ejecucion.
 - Limites: 1 a la vez, 3 s entre ejecuciones, 120 s, 200 KB. Auditoria sin contenido en `.local/agent-audit.log`.
 - Terminos: uso personal y manual. Anthropic no permite ofrecer el login de Claude.ai a terceros ni enrutar credenciales de suscripcion; este agente solo invoca tu CLI oficial sin modificarla y no guarda ni reenvia tokens.

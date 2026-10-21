@@ -49,6 +49,22 @@ export function scrubbedEnv(src: NodeJS.ProcessEnv = process.env): NodeJS.Proces
   return out;
 }
 
+/** Newest codex.exe under %LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\ (the folder name changes with app updates). */
+export function bundledCodexExe(env: NodeJS.ProcessEnv = process.env): string | null {
+  const root = env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, 'OpenAI', 'Codex', 'bin') : null;
+  if (!root || !fs.existsSync(root)) return null;
+  let best: { p: string; t: number } | null = null;
+  for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!d.isDirectory()) continue;
+    const p = path.join(root, d.name, 'codex.exe');
+    if (fs.existsSync(p)) {
+      const t = fs.statSync(p).mtimeMs;
+      if (!best || t > best.t) best = { p, t };
+    }
+  }
+  return best ? best.p : null;
+}
+
 export function defaultConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
   const home = os.homedir();
   const allowTestOverride = env.AGENT_ALLOW_TEST_OVERRIDE === '1';
@@ -62,13 +78,15 @@ export function defaultConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig
     ? env.AGENT_CLAUDE_BIN
     : first(env.AGENT_CLAUDE_EXE, path.join(home, '.local', 'bin', 'claude.exe'), path.join(home, '.local', 'bin', 'claude'));
 
-  // Codex ships as a node script; run it with the current node (no .cmd shim, no shell).
-  const codexJs = first(
+  // Codex: 1) native codex.exe bundled with the ChatGPT desktop app (or AGENT_CODEX_EXE), 2) the npm node script
+  // run with the current node. Never through a .cmd shim or a shell.
+  const codexExe = first(env.AGENT_CODEX_EXE, bundledCodexExe(env) ?? undefined);
+  const codexJs = codexExe ? null : first(
     env.AGENT_CODEX_JS,
     path.resolve(process.cwd(), '..', 'herramientas-portables', 'npm-global', 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
   );
-  const codexBin = allowTestOverride && env.AGENT_CODEX_BIN ? env.AGENT_CODEX_BIN : codexJs ? process.execPath : null;
-  const codexPrefix = allowTestOverride && env.AGENT_CODEX_BIN ? prefix('AGENT_CODEX_BIN_ARGS') : codexJs ? [codexJs] : [];
+  const codexBin = allowTestOverride && env.AGENT_CODEX_BIN ? env.AGENT_CODEX_BIN : codexExe ? codexExe : codexJs ? process.execPath : null;
+  const codexPrefix = allowTestOverride && env.AGENT_CODEX_BIN ? prefix('AGENT_CODEX_BIN_ARGS') : codexExe ? [] : codexJs ? [codexJs] : [];
 
   return {
     enabled: env.LOCAL_AGENT === '1',

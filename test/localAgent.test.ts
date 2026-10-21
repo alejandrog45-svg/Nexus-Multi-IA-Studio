@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { AddressInfo } from 'node:net';
 import express from 'express';
-import { createAgentRouter, defaultConfig, scrubbedEnv, AgentConfig } from '../server/localAgent';
+import { createAgentRouter, defaultConfig, scrubbedEnv, bundledCodexExe, AgentConfig } from '../server/localAgent';
 
 // Router real en memoria con CLIs falsas. Cubre: opt-in, loopback/mismo origen, token, lista blanca, confirmacion y limites.
 
@@ -178,6 +178,21 @@ test('ritmo: dos ejecuciones seguidas -> la segunda recibe 429', async () => {
   const b = (await call(port, '/propose', { token, body: { agent: 'claude', prompt: 'dos' } })).json;
   assert.equal((await call(port, '/confirm', { token, body: { requestId: a.requestId } })).status, 200);
   assert.equal((await call(port, '/confirm', { token, body: { requestId: b.requestId } })).status, 429);
+});
+
+test('bundledCodexExe elige el codex.exe mas reciente de la app y defaultConfig lo usa sin node ni shell', () => {
+  const local = fs.mkdtempSync(path.join(tmp, 'localappdata-'));
+  const bin = path.join(local, 'OpenAI', 'Codex', 'bin');
+  const old = path.join(bin, 'aaaa'); const fresh = path.join(bin, 'bbbb');
+  fs.mkdirSync(old, { recursive: true }); fs.mkdirSync(fresh, { recursive: true });
+  fs.writeFileSync(path.join(old, 'codex.exe'), 'x'); fs.writeFileSync(path.join(fresh, 'codex.exe'), 'y');
+  fs.utimesSync(path.join(old, 'codex.exe'), new Date(2026, 0, 1), new Date(2026, 0, 1));
+  fs.utimesSync(path.join(fresh, 'codex.exe'), new Date(2026, 9, 1), new Date(2026, 9, 1));
+  assert.equal(bundledCodexExe({ LOCALAPPDATA: local } as NodeJS.ProcessEnv), path.join(fresh, 'codex.exe'));
+  const cfg = defaultConfig({ LOCAL_AGENT: '1', LOCALAPPDATA: local } as NodeJS.ProcessEnv);
+  assert.equal(cfg.agents.codex.bin, path.join(fresh, 'codex.exe'));
+  assert.deepEqual(cfg.agents.codex.binPrefixArgs, []);
+  assert.equal(bundledCodexExe({ LOCALAPPDATA: path.join(tmp, 'no-existe') } as NodeJS.ProcessEnv), null);
 });
 
 test('scrubbedEnv quita claves y tokens pero conserva PATH', () => {
