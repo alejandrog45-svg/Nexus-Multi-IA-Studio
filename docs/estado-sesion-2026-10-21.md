@@ -17,7 +17,7 @@
 ## Pendiente
 1. Mover claves reales de `.env.example` a `.env.local` y autorizar el push.
 2. Decidir las 46 imagenes de `src/assets/images/BORRADORES/` (sin seguimiento de git, intactas; no pertenecen a este proyecto).
-3. Agente local con CLIs reales: `claude auth login`; reparar Codex en W: (falta `@openai/codex-win32-x64`) y `codex login`; reverificar flags de `codex exec`.
+3. Agente local: Codex YA funciona (prueba real hecha, ver `docs/PRUEBA_REAL_CODEX_2026-10-21.md`; usa el codex.exe de la app ChatGPT, no hace falta reparar npm). Faltan: `claude auth login` y corregir que la respuesta de Codex llega con su cabecera (usar `--output-last-message`).
 4. Prueba real con claves: 1 llamada a `/api/stream` y 1 a Groq (consume cuota minima).
 5. #9 Ollama (descarga/instalacion; decision del dueno).
 6. Retirar `callGeminiWithBackoff` (sin uso) en una sesion aparte; ver `obsoletos/MANIFIESTO.md`.
