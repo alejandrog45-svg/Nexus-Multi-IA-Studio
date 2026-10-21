@@ -286,6 +286,26 @@ export default function App() {
     }
   };
 
+  // Local agent (opt-in on the server): Claude Code and Codex CLIs, only "connected" when installed AND logged in
+  useEffect(() => {
+    orchestrator.getAgentStatus().then((agents) => {
+      if (!agents) return;
+      const map: { agent: 'claude' | 'codex'; model: AIModelId }[] = [{ agent: 'claude', model: 'claude' }, { agent: 'codex', model: 'chatgpt' }];
+      setSubscriptions(prev => {
+        const next = { ...prev };
+        for (const { agent, model } of map) {
+          const a = agents.find(x => x.id === agent);
+          if (a?.installed && a.loggedIn) {
+            next[model] = { ...prev[model], connected: true, status: 'active', planName: 'Tu suscripción (CLI local)', lastActive: `${a.label}: sesión iniciada (sin llamada de prueba)` };
+          } else if (a) {
+            next[model] = { ...prev[model], lastActive: a.installed ? `${a.label}: falta iniciar sesión en esa CLI` : `${a.label}: no instalado` };
+          }
+        }
+        return next;
+      });
+    });
+  }, []);
+
   // Which free support providers have a key on the server (Groq powers the Meta AI / Llama card)
   useEffect(() => {
     fetch('/api/providers')
@@ -483,6 +503,44 @@ export default function App() {
       } finally {
         activeAbortController.current = null;
         setIsProcessing(prev => ({ ...prev, gemini: false }));
+      }
+    } else if ((modelId === 'claude' || modelId === 'chatgpt') && subscriptions[modelId].connected) {
+      // The user's own logged-in official CLI (Claude Code / Codex) through the local agent; asks for confirmation first.
+      const agentId = modelId === 'claude' ? 'claude' : 'codex';
+      setIsProcessing(prev => ({ ...prev, [modelId]: true }));
+      try {
+        const result = await orchestrator.askLocalAgent(agentId, customPrompt, projectContext, files, (info) =>
+          window.confirm(
+            `Se ejecutará en tu PC:\n\n${info.command}\n\n` +
+            `Texto a enviar: ${info.promptChars} caracteres.\n` +
+            `Archivos incluidos: ${info.filesIncluded.length ? info.filesIncluded.join(', ') : 'ninguno'}.\n\n` +
+            `Usa tu propia sesión iniciada en esa CLI. ¿Ejecutar?`
+          )
+        );
+        setMessages(prev => [...prev, {
+          id: `msg_${modelId}_${Date.now()}`,
+          modelId,
+          senderName: `${result.label} · tu suscripción`,
+          content: result.text + (result.truncated ? '\n\n[Respuesta recortada a 200 KB]' : ''),
+          timestamp: new Date().toLocaleTimeString(),
+        }]);
+        addNotification({
+          title: 'Respuesta recibida',
+          message: `${result.label} respondió (${result.durationMs} ms).`,
+          type: 'ai_finished',
+          modelId,
+          sourceAI: subscriptions[modelId].name,
+        });
+      } catch (err: any) {
+        addNotification({
+          title: 'Agente local',
+          message: err.message || 'Error al ejecutar la CLI local.',
+          type: 'intervention_needed',
+          modelId,
+          actionLabel: 'Revisar',
+        });
+      } finally {
+        setIsProcessing(prev => ({ ...prev, [modelId]: false }));
       }
     } else if (modelId === 'meta' && subscriptions.meta.connected) {
       // Llama (Meta) served by Groq through the backend; the real provider is shown in the sender name.

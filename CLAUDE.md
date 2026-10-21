@@ -30,6 +30,8 @@ Plan gratuito: ~20 solicitudes/dia por modelo (error 429 real). Repartir entre m
 - BUG REAL CORREGIDO: `/api/stream` cortaba la respuesta porque escuchaba `req.on('close')` (en Node moderno se dispara al leer el cuerpo). Ahora usa `res`.
 - Verificado solo contra un Gemini FALSO local (`GEMINI_BASE_URL`); falta 1 prueba con clave real (consume 1 de las ~20 diarias).
 - #6 HECHA: Groq (Llama) alimenta la tarjeta Meta AI y OpenRouter (Gemma) es respaldo automatico de Gemini sin cuota, siempre rotulados con proveedor y modelo reales; claves solo en .env.local (GROQ_API_KEY, OPENROUTER_API_KEY). Probado con proveedores falsos y demo en vivo en Chrome; FALTA probar con claves reales (el .env.local no existia en la carpeta del proyecto al terminar).
+- #10 HECHA (elegida por el dueno tras 3 informes de investigacion web): agente local `server/localAgent.ts` para Claude Code y Codex con la suscripcion del propio usuario. Opt-in `LOCAL_AGENT=1`. 44/44 pruebas con CLIs falsas. PENDIENTE para usarlo de verdad: que el usuario inicie sesion en `claude auth login` (hoy loggedIn=false) y que se repare Codex en W: (falta @openai/codex-win32-x64), y `codex login`. Flags de `codex exec` por reverificar tras repararlo.
+- Vias descartadas/aplazadas: iframes (X-Frame-Options), extension propia que automatiza las webs (va contra los terminos de Anthropic), CDP (Chrome 136+ exige perfil dedicado).
 - PENDIENTES (requieren decision del dueno): #9 Ollama (descarga/instalacion), #10 agente local de CLIs (riesgo alto), #11 imagen real.
 - Tests: `test/` (unitarias, integracion con Gemini falso, E2E con Chromium headless de W: `playwright-browsers`). No usar herramientas de navegador de E:.
 

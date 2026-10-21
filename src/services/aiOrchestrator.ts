@@ -296,6 +296,73 @@ export class AIOrchestratorService {
     }
   }
 
+  private agentToken: string | null = null;
+
+  private async agentFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    if (!this.agentToken) {
+      const s = await fetch('/api/agent/session');
+      if (!s.ok) throw new Error('El agente local está desactivado en el servidor.');
+      this.agentToken = (await s.json()).token;
+    }
+    return fetch(`/api/agent${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', 'X-Agent-Token': this.agentToken as string, ...(init.headers || {}) },
+    });
+  }
+
+  /** Local CLI agents (Claude Code / Codex): installed + logged in? Null when the local agent is disabled. */
+  async getAgentStatus(): Promise<{ id: 'claude' | 'codex'; label: string; installed: boolean; loggedIn: boolean; command: string }[] | null> {
+    try {
+      const r = await this.agentFetch('/status');
+      if (!r.ok) return null;
+      return (await r.json()).agents;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Runs one question through the user's own logged-in CLI. Two steps: the server prepares the exact command,
+   * `confirm` shows it to the user, and only a "yes" lets the server run it (once).
+   */
+  async askLocalAgent(
+    agent: 'claude' | 'codex',
+    prompt: string,
+    context: string,
+    files: AttachedFile[],
+    confirm: (info: { label: string; command: string; promptChars: number; filesIncluded: string[] }) => boolean,
+    crossContext?: string
+  ): Promise<{ text: string; label: string; durationMs: number; truncated: boolean }> {
+    const startTime = performance.now();
+    const record = (success: boolean, error?: string) =>
+      metricsStore.addRecord({
+        id: `metric_${Date.now()}`,
+        model: `${agent} (CLI local)`,
+        promptTokens: 0,
+        candidatesTokens: 0,
+        totalTokens: 0,
+        latencyMs: Math.round(performance.now() - startTime),
+        timestamp: new Date().toLocaleTimeString(),
+        success,
+        error,
+      });
+
+    const pr = await this.agentFetch('/propose', {
+      method: 'POST',
+      body: JSON.stringify({ agent, prompt, context, files: files.filter(f => f.includedInContext), crossContext }),
+    });
+    const proposal = await pr.json().catch(() => ({}));
+    if (!pr.ok) { record(false, proposal.error); throw new Error(proposal.error || `Error del servidor (${pr.status})`); }
+
+    if (!confirm(proposal)) throw new Error('Cancelado por el usuario: no se ejecutó nada.');
+
+    const cr = await this.agentFetch('/confirm', { method: 'POST', body: JSON.stringify({ requestId: proposal.requestId }) });
+    const result = await cr.json().catch(() => ({}));
+    if (!cr.ok) { record(false, result.error); throw new Error(result.error || `Error del servidor (${cr.status})`); }
+    record(true);
+    return { text: result.text, label: result.label, durationMs: result.durationMs, truncated: !!result.truncated };
+  }
+
   /**
    * Asks a free support provider (Groq / OpenRouter) through the backend proxy (/api/provider/chat).
    * The provider keys live only on the server.

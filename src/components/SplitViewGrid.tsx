@@ -43,9 +43,9 @@ export const SplitViewGrid: React.FC<Props> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Direct (API-backed) cards: Gemini always; Meta/Llama only when the server has a Groq key.
+  // Direct cards: Gemini always; the others only when connected (Meta via Groq key, Claude/ChatGPT via their logged-in local CLI).
   const isDirectModel = (modelId: AIModelId) =>
-    modelId === 'gemini' || (modelId === 'meta' && subscriptions[modelId].connected);
+    modelId === 'gemini' || subscriptions[modelId].connected;
 
   const handleIndividualSubmit = (modelId: AIModelId) => {
     const text = individualPrompts[modelId]?.trim();

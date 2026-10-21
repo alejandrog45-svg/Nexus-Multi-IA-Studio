@@ -4,6 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { isSensitiveFile } from './src/services/sensitiveFiles';
 import { QuotaTracker, ResponseCache } from './server/quotaCache';
+import { createAgentRouter } from './server/localAgent';
 import { PROVIDER_IDS, ProviderError, ProviderId, chatCompletion, isProviderId, listProviders, providerConfig } from './server/providers';
 
 // .env.local takes precedence over .env (both ignored by git)
@@ -214,6 +215,9 @@ async function openRouterFallback(prompt: string, context: any, fileSummaries: s
     return null;
   }
 }
+
+// Local agent (Claude Code / Codex CLIs with the user's own login). Off unless LOCAL_AGENT=1; see server/localAgent.ts
+app.use('/api/agent', createAgentRouter());
 
 // GET /api/providers - which support providers are configured (never returns keys)
 app.get('/api/providers', (_req, res) => {
