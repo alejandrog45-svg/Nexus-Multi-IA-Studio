@@ -225,11 +225,13 @@ Responde en español de forma rigurosa y técnica.`;
     const targetModel = model || PRIMARY_MODEL;
 
     let geminiResponse;
+    let modelUsed = targetModel;
     try {
       geminiResponse = await callGeminiWithBackoff(ai, targetModel, fullPrompt, 1);
     } catch (primaryErr: any) {
       if (targetModel !== FALLBACK_MODEL) {
         console.warn(`[Fallback] Switching to ${FALLBACK_MODEL}...`);
+        modelUsed = FALLBACK_MODEL;
         geminiResponse = await callGeminiWithBackoff(ai, FALLBACK_MODEL, fullPrompt, 1);
       } else {
         throw primaryErr;
@@ -245,7 +247,7 @@ Responde en español de forma rigurosa y técnica.`;
       text: geminiResponse.text || '',
       usageMetadata: geminiResponse.usageMetadata || null,
       latencyMs,
-      modelUsed: targetModel,
+      modelUsed,
     });
   } catch (err: any) {
     const latencyMs = Date.now() - startTime;
@@ -347,11 +349,13 @@ Responde en español con código limpio y explicaciones concisas.`;
       }
     }
 
+    let usageMetadata: any = null;
     for await (const chunk of streamResult) {
       if (clientDisconnected) {
         console.log('[SSE Stream] Client aborted request.');
         break;
       }
+      if (chunk.usageMetadata) usageMetadata = chunk.usageMetadata;
       const chunkText = chunk.text || '';
       if (chunkText) {
         res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
@@ -359,7 +363,7 @@ Responde en español con código limpio y explicaciones concisas.`;
     }
 
     if (!clientDisconnected) {
-      res.write(`data: ${JSON.stringify({ done: true, modelUsed })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true, modelUsed, usageMetadata })}\n\n`);
       res.end();
     }
   } catch (err: any) {

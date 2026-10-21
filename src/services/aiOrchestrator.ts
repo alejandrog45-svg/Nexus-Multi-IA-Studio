@@ -112,6 +112,8 @@ export class AIOrchestratorService {
   ): Promise<{ text: string; latencyMs: number }> {
     const startTime = performance.now();
     let accumulatedText = '';
+    let modelUsed = '';
+    let usage: any = null;
 
     try {
       const response = await fetch('/api/stream', {
@@ -165,6 +167,10 @@ export class AIOrchestratorService {
                 accumulatedText += data.text;
                 onChunk(data.text);
               }
+              if (data.done) {
+                modelUsed = data.modelUsed || modelUsed;
+                usage = data.usageMetadata || null;
+              }
             } catch (pErr: any) {
               if (pErr.message && !pErr.message.includes('JSON')) {
                 throw pErr;
@@ -176,12 +182,14 @@ export class AIOrchestratorService {
 
       const latencyMs = Math.round(performance.now() - startTime);
 
+      // Real token counts come from the server's usageMetadata; only estimate (and say so) when absent.
+      const hasUsage = !!usage;
       metricsStore.addRecord({
         id: `metric_${Date.now()}`,
-        model: 'gemini-3.5-flash (SSE)',
-        promptTokens: Math.round(prompt.length / 4),
-        candidatesTokens: Math.round(accumulatedText.length / 4),
-        totalTokens: Math.round((prompt.length + accumulatedText.length) / 4),
+        model: `${modelUsed || 'gemini'} (SSE${hasUsage ? '' : ', tokens estimados'})`,
+        promptTokens: hasUsage ? usage.promptTokenCount || 0 : Math.round(prompt.length / 4),
+        candidatesTokens: hasUsage ? usage.candidatesTokenCount || 0 : Math.round(accumulatedText.length / 4),
+        totalTokens: hasUsage ? usage.totalTokenCount || 0 : Math.round((prompt.length + accumulatedText.length) / 4),
         latencyMs,
         timestamp: new Date().toLocaleTimeString(),
         success: true,
@@ -195,7 +203,7 @@ export class AIOrchestratorService {
       }
       metricsStore.addRecord({
         id: `metric_${Date.now()}`,
-        model: 'gemini-3.5-flash (SSE)',
+        model: 'gemini (SSE)',
         promptTokens: 0,
         candidatesTokens: 0,
         totalTokens: 0,
