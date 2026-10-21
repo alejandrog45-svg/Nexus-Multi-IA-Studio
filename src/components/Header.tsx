@@ -10,6 +10,7 @@ interface Props {
   subscriptions: Record<AIModelId, AISubscriptionInfo>;
   onOpenSubscriptionsModal: () => void;
   onOpenImageStudio: () => void;
+  onOpenComposer: () => void;
   onOpenMediaLibrary: () => void;
   onOpenSecurityAuth: () => void;
   onOpenAnalyticsDashboard: () => void;
@@ -29,6 +30,7 @@ export const Header: React.FC<Props> = ({
   subscriptions,
   onOpenSubscriptionsModal,
   onOpenImageStudio,
+  onOpenComposer,
   onOpenMediaLibrary,
   onOpenSecurityAuth,
   onOpenAnalyticsDashboard,
@@ -117,6 +119,16 @@ export const Header: React.FC<Props> = ({
           >
             <ImageIcon className="w-4 h-4 text-amber-400" />
             <span className="hidden sm:inline">Estudio de Imagen</span>
+          </button>
+
+          {/* Deterministic flyer composer (no AI, real images) */}
+          <button
+            onClick={onOpenComposer}
+            className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Compositor de Flyer: tu imagen original + pie de texto, sin IA"
+          >
+            <ImageIcon className="w-4 h-4 text-emerald-400" />
+            <span className="hidden sm:inline">Compositor</span>
           </button>
 
           {/* Media Library Trigger */}

@@ -13,6 +13,7 @@ import { OrchestrationBar } from './components/OrchestrationBar';
 import { CodeSandboxModal } from './components/CodeSandboxModal';
 import { FocusDocumentModal } from './components/FocusDocumentModal';
 import { ImageStudioModal } from './components/ImageStudioModal';
+import { FlyerComposerModal } from './components/FlyerComposerModal';
 import { ImageRulesModal } from './components/ImageRulesModal';
 import { MediaLibraryModal, INITIAL_LIBRARY_ITEMS } from './components/MediaLibraryModal';
 import { SecurityAuthModal } from './components/SecurityAuthModal';
@@ -189,6 +190,7 @@ export default function App() {
   // Modals
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
   const [isImageStudioOpen, setIsImageStudioOpen] = useState(false);
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImageRulesOpen, setIsImageRulesOpen] = useState(false);
   const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
@@ -906,6 +908,7 @@ export default function App() {
         subscriptions={subscriptions}
         onOpenSubscriptionsModal={() => setIsSubModalOpen(true)}
         onOpenImageStudio={() => setIsImageStudioOpen(true)}
+        onOpenComposer={() => setIsComposerOpen(true)}
         onOpenMediaLibrary={() => setIsMediaLibraryOpen(true)}
         onOpenSecurityAuth={() => setIsSecurityModalOpen(true)}
         onOpenAnalyticsDashboard={() => setIsAnalyticsDashboardOpen(true)}
@@ -1124,6 +1127,14 @@ export default function App() {
         onOpenRules={() => setIsImageRulesOpen(true)}
         onSaveToLibrary={handleSaveGeneratedImageToLibrary}
         subscriptions={subscriptions}
+      />
+
+      {/* Flyer Composer (no AI): original image + footer, with pixel-level originality proof */}
+      <FlyerComposerModal
+        isOpen={isComposerOpen}
+        onClose={() => setIsComposerOpen(false)}
+        items={libraryItems}
+        onSaveToLibrary={handleAddLibraryItem}
       />
 
       {/* Image Rules & Instructions Modal */}
