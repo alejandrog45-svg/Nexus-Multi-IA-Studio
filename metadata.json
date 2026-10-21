@@ -1,0 +1,6 @@
+{
+  "name": "Centro de Creación en Español",
+  "description": "Plataforma de desarrollo y creación de aplicaciones interactivas en español.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

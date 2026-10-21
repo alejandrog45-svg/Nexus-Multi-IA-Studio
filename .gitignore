@@ -1,0 +1,18 @@
+# Secretos y entorno
+.env*
+!.env.example
+
+# Dependencias y salidas
+node_modules/
+build/
+dist/
+coverage/
+server.js
+
+# Logs y temporales
+*.log
+.local/
+test_*.js
+test_*.cjs
+stream_output.txt
+.DS_Store

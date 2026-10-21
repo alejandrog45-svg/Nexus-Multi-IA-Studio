@@ -1,0 +1,396 @@
+import express from 'express';
+import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+
+// Body size limit: 2MB max
+app.use(express.json({ limit: '2mb' }));
+
+// 1. IP Rate Limiting (In-memory sliding window: 45 req / minute per IP)
+interface IPRateRecord {
+  count: number;
+  resetAt: number;
+}
+const ipRateMap = new Map<string, IPRateRecord>();
+
+app.use('/api', (req, res, next) => {
+  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+
+  const record = ipRateMap.get(ip);
+  if (!record || now > record.resetAt) {
+    ipRateMap.set(ip, { count: 1, resetAt: now + windowMs });
+    return next();
+  }
+
+  record.count++;
+  if (record.count > 45) {
+    return res.status(429).json({
+      error: 'Límite de peticiones por IP excedido (máximo 45 por minuto). Espera un momento.',
+      code: 'RATE_LIMIT_IP',
+    });
+  }
+  next();
+});
+
+// 2. Strict CORS: Only allow same-origin requests or allowed app domains
+app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+
+  if (origin) {
+    // Check if origin matches host or is localhost / run.app
+    try {
+      const url = new URL(origin);
+      const isAllowed = 
+        url.host === host ||
+        url.hostname === 'localhost' ||
+        url.hostname === '127.0.0.1' ||
+        url.hostname.endsWith('.run.app');
+
+      if (!isAllowed) {
+        return res.status(403).json({ error: 'Acceso CORS no autorizado.' });
+      }
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    } catch {
+      return res.status(403).json({ error: 'Origen inválido.' });
+    }
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+// 3. Concurrency Semaphore (Max 2 concurrent calls to Gemini to protect rate limits)
+class ConcurrencySemaphore {
+  private active = 0;
+  private readonly maxConcurrent: number;
+  private queue: (() => void)[] = [];
+
+  constructor(maxConcurrent = 2) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.active < this.maxConcurrent) {
+      this.active++;
+      let released = false;
+      return () => {
+        if (!released) {
+          released = true;
+          this.active--;
+          this.dispatchNext();
+        }
+      };
+    }
+
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.active++;
+        let released = false;
+        resolve(() => {
+          if (!released) {
+            released = true;
+            this.active--;
+            this.dispatchNext();
+          }
+        });
+      });
+    });
+  }
+
+  private dispatchNext() {
+    if (this.queue.length > 0 && this.active < this.maxConcurrent) {
+      const next = this.queue.shift();
+      if (next) next();
+    }
+  }
+
+  getStats() {
+    return { active: this.active, queued: this.queue.length };
+  }
+}
+
+const geminiSemaphore = new ConcurrencySemaphore(2);
+
+// Model definitions: primary and fallback (models confirmed live with active free quota)
+const PRIMARY_MODEL = 'gemini-3.1-flash-lite';
+const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
+
+// GET /api/health - Safe, minimal health endpoint
+app.get('/api/health', (req, res) => {
+  const hasKey = !!(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY);
+  res.json({
+    status: 'ok',
+    keyConfigured: hasKey,
+    primaryModel: PRIMARY_MODEL,
+    fallbackModel: FALLBACK_MODEL,
+    concurrency: geminiSemaphore.getStats(),
+  });
+});
+
+// Helper for backoff calls
+async function callGeminiWithBackoff(ai: GoogleGenAI, model: string, contents: string, maxRetries = 2) {
+  let attempt = 0;
+  let delay = 1000;
+
+  while (attempt <= maxRetries) {
+    try {
+      const response = await ai.models.generateContent({ model, contents });
+      return response;
+    } catch (err: any) {
+      attempt++;
+      const isTransient = 
+        err?.status === 429 || 
+        err?.message?.includes('429') ||
+        err?.status === 503 ||
+        err?.message?.includes('503') ||
+        err?.message?.includes('high demand');
+
+      if (isTransient && attempt <= maxRetries) {
+        console.warn(`[Gemini Semaphore] Retry ${attempt}/${maxRetries} after ${delay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay *= 2;
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+// POST /api/chat - Standard JSON response
+app.post('/api/chat', async (req, res) => {
+  const startTime = Date.now();
+  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'GEMINI_API_KEY no configurada en el servidor backend.',
+      code: 'MISSING_API_KEY',
+    });
+  }
+
+  const { prompt, context, files, model, crossContext, simulateQuotaError } = req.body;
+
+  // Test trigger for forced 429
+  if (simulateQuotaError === true || req.headers['x-simulate-quota'] === 'true') {
+    return res.status(429).json({
+      error: 'Se superó el límite de cuota por minuto/día de la API de Gemini. Espera unos momentos antes de reintentar.',
+      code: 'QUOTA_EXCEEDED',
+      simulated: true,
+      latencyMs: Date.now() - startTime,
+    });
+  }
+
+  // Strict prompt validation
+  if (!prompt || typeof prompt !== 'string') {
+    return res.status(400).json({ error: 'El campo "prompt" es requerido y debe ser texto.' });
+  }
+
+  if (prompt.length > 50000) {
+    return res.status(400).json({ error: 'El prompt excede el límite máximo permitido (50,000 caracteres).' });
+  }
+
+  const release = await geminiSemaphore.acquire();
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+
+    let fileSummaries = '';
+    if (Array.isArray(files) && files.length > 0) {
+      fileSummaries = files
+        .filter((f: any) => f && f.includedInContext)
+        .map((f: any) => `[Archivo: ${String(f.name || 'documento')} (${String(f.type || 'text')})]\n${f.isText ? String(f.content || '').slice(0, 4000) : '[Binario]'}`)
+        .join('\n\n');
+    }
+
+    const systemInstruction = `Eres Gemini (Google AI), motor del estudio Nexus Multi-IA.
+${context ? `CONTEXTO DEL PROYECTO:\n${String(context).slice(0, 6000)}\n` : ''}
+${fileSummaries ? `ARCHIVOS:\n${fileSummaries}\n` : ''}
+${crossContext ? `APORTES DE OTROS AGENTES:\n${String(crossContext).slice(0, 4000)}\n` : ''}
+Responde en español de forma rigurosa y técnica.`;
+
+    const fullPrompt = `${systemInstruction}\n\nSOLICITUD:\n${prompt}`;
+    const targetModel = model || PRIMARY_MODEL;
+
+    let geminiResponse;
+    try {
+      geminiResponse = await callGeminiWithBackoff(ai, targetModel, fullPrompt, 1);
+    } catch (primaryErr: any) {
+      if (targetModel !== FALLBACK_MODEL) {
+        console.warn(`[Fallback] Switching to ${FALLBACK_MODEL}...`);
+        geminiResponse = await callGeminiWithBackoff(ai, FALLBACK_MODEL, fullPrompt, 1);
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    if (!geminiResponse) {
+      throw new Error('No se recibió respuesta válida del modelo Gemini.');
+    }
+
+    const latencyMs = Date.now() - startTime;
+    return res.json({
+      text: geminiResponse.text || '',
+      usageMetadata: geminiResponse.usageMetadata || null,
+      latencyMs,
+      modelUsed: targetModel,
+    });
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    const isQuota = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota');
+    const isDemand = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('high demand');
+
+    const errorMsg = isQuota
+      ? 'Se superó el límite de cuota por minuto/día de la API de Gemini. Espera unos momentos antes de reintentar.'
+      : isDemand
+      ? 'El servicio de Gemini experimenta alta demanda en estos momentos. Intenta de nuevo en unos segundos.'
+      : err?.message || 'Error al comunicar con Gemini.';
+
+    return res.status(err?.status || 500).json({
+      error: errorMsg,
+      code: isQuota ? 'QUOTA_EXCEEDED' : isDemand ? 'HIGH_DEMAND' : 'API_ERROR',
+      latencyMs,
+    });
+  } finally {
+    release();
+  }
+});
+
+// POST /api/stream - Real Server-Sent Events (SSE) streaming endpoint
+app.post('/api/stream', async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY no configurada.', code: 'MISSING_API_KEY' });
+  }
+
+  const { prompt, context, files, model, crossContext, simulateQuotaError } = req.body;
+
+  if (simulateQuotaError === true || req.headers['x-simulate-quota'] === 'true') {
+    return res.status(429).json({
+      error: 'Se superó el límite de cuota por minuto/día de la API de Gemini. Espera unos momentos antes de reintentar.',
+      code: 'QUOTA_EXCEEDED',
+      simulated: true,
+    });
+  }
+
+  if (!prompt || typeof prompt !== 'string') {
+    return res.status(400).json({ error: 'El campo "prompt" es requerido.' });
+  }
+
+  if (prompt.length > 50000) {
+    return res.status(400).json({ error: 'El prompt excede los 50,000 caracteres.' });
+  }
+
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  let clientDisconnected = false;
+  req.on('close', () => {
+    clientDisconnected = true;
+  });
+
+  const release = await geminiSemaphore.acquire();
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+
+    let fileSummaries = '';
+    if (Array.isArray(files) && files.length > 0) {
+      fileSummaries = files
+        .filter((f: any) => f && f.includedInContext)
+        .map((f: any) => `[Archivo: ${String(f.name || 'documento')}]\n${f.isText ? String(f.content || '').slice(0, 4000) : '[Binario]'}`)
+        .join('\n\n');
+    }
+
+    const systemInstruction = `Eres Gemini (Google AI), motor de razonamiento del estudio Nexus Multi-IA.
+${context ? `CONTEXTO DEL PROYECTO:\n${String(context).slice(0, 6000)}\n` : ''}
+${fileSummaries ? `ARCHIVOS:\n${fileSummaries}\n` : ''}
+${crossContext ? `APORTES DE OTROS AGENTES:\n${String(crossContext).slice(0, 4000)}\n` : ''}
+Responde en español con código limpio y explicaciones concisas.`;
+
+    const fullPrompt = `${systemInstruction}\n\nSOLICITUD:\n${prompt}`;
+    const targetModel = model || PRIMARY_MODEL;
+    let streamResult;
+    let modelUsed = targetModel;
+
+    try {
+      streamResult = await ai.models.generateContentStream({
+        model: targetModel,
+        contents: fullPrompt,
+      });
+    } catch (streamErr: any) {
+      if (targetModel !== FALLBACK_MODEL) {
+        console.warn(`[SSE Stream Fallback] Switching to ${FALLBACK_MODEL}...`);
+        modelUsed = FALLBACK_MODEL;
+        streamResult = await ai.models.generateContentStream({
+          model: FALLBACK_MODEL,
+          contents: fullPrompt,
+        });
+      } else {
+        throw streamErr;
+      }
+    }
+
+    for await (const chunk of streamResult) {
+      if (clientDisconnected) {
+        console.log('[SSE Stream] Client aborted request.');
+        break;
+      }
+      const chunkText = chunk.text || '';
+      if (chunkText) {
+        res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+      }
+    }
+
+    if (!clientDisconnected) {
+      res.write(`data: ${JSON.stringify({ done: true, modelUsed })}\n\n`);
+      res.end();
+    }
+  } catch (err: any) {
+    if (!clientDisconnected) {
+      const isQuota = err?.status === 429 || err?.message?.includes('429');
+      const errorMsg = isQuota
+        ? 'Se superó el límite de cuota por minuto/día de la API de Gemini.'
+        : err?.message || 'Error en el flujo de streaming.';
+
+      res.write(`data: ${JSON.stringify({ error: errorMsg, code: isQuota ? 'QUOTA_EXCEEDED' : 'STREAM_ERROR' })}\n\n`);
+      res.end();
+    }
+  } finally {
+    release();
+  }
+});
+
+// Mount Vite SPA
+async function startServer() {
+  const vite = await createViteServer({
+    server: { middlewareMode: true, host: '0.0.0.0' },
+    appType: 'spa',
+  });
+
+  app.use(vite.middlewares);
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Nexus Server] Running at http://0.0.0.0:${PORT}`);
+    console.log(`[Nexus Server] Endpoints: GET /api/health, POST /api/chat, POST /api/stream`);
+  });
+}
+
+startServer().catch((err) => {
+  console.error('[Nexus Server Start Failed]:', err);
+  process.exit(1);
+});
