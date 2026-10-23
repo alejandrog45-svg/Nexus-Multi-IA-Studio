@@ -36,6 +36,12 @@ Plan gratuito: ~20 solicitudes/dia por modelo (error 429 real). Repartir entre m
 - PENDIENTES (requieren decision del dueno): #9 Ollama (descarga/instalacion), #10 agente local de CLIs (riesgo alto), #11 imagen real.
 - Tests: `test/` (unitarias, integracion con Gemini falso, E2E con Chromium headless de W: `playwright-browsers`). No usar herramientas de navegador de E:.
 
+## 2026-10-23: material `entregas_vigentes` (copia del otro proyecto; el original no se toca)
+- Carpeta `src/assets/images/entregas_vigentes/` (528 MB) y `BORRADORES/` (46): SIN seguimiento de git y NO estan en la rama del PR #1. Publicarlas en este repo publico es decision del dueno.
+- Referencias al otro proyecto cambiadas SOLO en 10 textos (manifiestos y READMEs de V1-V5): ver `docs/CAMBIO_REFERENCIAS_2026-10-23.md` (respaldo en `_respaldos/entregas-textos_2026-10-23`). Imagenes, nombres y hashes intactos; 19 sha256 verificados.
+- Variantes nuevas respetando estructura (carpeta por version + README + MANIFIESTO.json, V1-V5 intactas): V6 (`scripts/generar_v6.mjs`, con el Compositor de la app: pie sobre el flyer original, 0 px modificados) y **V7 = diseno completo** (`scripts/generar_v7.mjs`: plantilla V5 intacta + fotos reales de BORRADORES/VARIANTES_FONDO_2025; 6 piezas; 0 px modificados fuera de la zona de foto). El dueno pidio diseno COMPLETO: usar V7 como referencia; V6 es solo pie.
+- Prueba de regresion: `test/entregas.test.ts` (se omite si la carpeta no esta).
+- Material util: las fotos limpias son pocas (IMG-WA0065/66 y las de VARIANTES_FONDO_2025); los fotogramas de NUEVO MATERIAL llevan subtitulos superpuestos.
 ## CIERRE FINAL 2026-10-21: leer `docs/estado-sesion-2026-10-21.md` (pendientes, git sin subir y siguiente prompt). Suite 52/52, lint y build OK. Carpeta `obsoletos/` creada (bun.lock). NO hacer push hasta que el dueno mueva sus claves de `.env.example` a `.env.local`.
 
 ## Cierre de sesion 2026-10-21 (preparacion; sin deploy)
