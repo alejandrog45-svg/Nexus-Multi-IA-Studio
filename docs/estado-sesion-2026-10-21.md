@@ -25,3 +25,9 @@
 
 ## Siguiente prompt sugerido
 "Retomar Nexus-Multi-IA-Studio: ya movi mis claves a .env.local. Verifica solo nombres, haz el push de los commits pendientes y luego una prueba real de /api/stream y Groq."
+
+## CIERRE 2026-10-23
+- Material `entregas_vigentes` (copia del otro proyecto): referencias cambiadas solo en 10 textos (`docs/CAMBIO_REFERENCIAS_2026-10-23.md`); variantes V6 (pie) y V7 (diseno completo, 6 piezas) en `src/assets/images/entregas_vigentes/` (SIN seguimiento de git); `scripts/generar_v6.mjs` y `scripts/generar_v7.mjs`; prueba `test/entregas.test.ts`. 58/58 pruebas en main local.
+- **Subido a la rama del PR #1** (`ccr-64f7adeb-uacsbu`, commit `f0db68d`, avance normal): solo CLAUDE.md (seccion nueva), `docs/CAMBIO_REFERENCIAS_2026-10-23.md`, `scripts/generar_v7.mjs` y `test/entregas.test.ts`. Sin imagenes ni videos. NO se subio `generar_v6.mjs` (depende del Compositor, que solo existe en main local). En esa rama: 20 pruebas OK, 5 omitidas (el material no esta alli), lint y build OK.
+- `main` sigue con **7 commits locales sin subir** (GitHub en `c51b87c`) y `.env.example` con claves reales sin tocar: el push de main espera a que el dueno las mueva a `.env.local`.
+- Pendiente: decidir si el material se publica (repo publico), `claude auth login`, 46 imagenes de BORRADORES, #9 Ollama, E2E a veces fallan por carga si quedan procesos huerfanos (matar headless antes de correr la suite).
