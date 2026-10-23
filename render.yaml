@@ -1,0 +1,19 @@
+# Blueprint opcional. Solo define el servicio "nexus-multi-ia-studio" (nombre nuevo, plan gratuito);
+# no modifica ningun otro servicio de Render. Los secretos se escriben en el panel, nunca aqui.
+services:
+  - type: web
+    name: nexus-multi-ia-studio
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        sync: false

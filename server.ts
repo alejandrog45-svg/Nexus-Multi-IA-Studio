@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { timingSafeEqual } from 'crypto';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { isSensitiveFile } from './src/services/sensitiveFiles';
@@ -11,6 +12,24 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 // Production mode: `npm start` (--prod) or NODE_ENV=production. Test hooks are disabled in production.
 const IS_PROD = process.argv.includes('--prod') || process.env.NODE_ENV === 'production';
+
+// Optional access gate for public deployments: when ACCESS_CODE is set, every request except
+// /api/health needs HTTP Basic auth (any user name, password = ACCESS_CODE). Unset = open (local dev).
+const ACCESS_CODE = process.env.ACCESS_CODE || '';
+const safeEqual = (a: string, b: string) => {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+app.use((req, res, next) => {
+  if (!ACCESS_CODE || req.path === '/api/health') return next();
+  const header = req.headers.authorization || '';
+  const decoded = header.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString() : '';
+  const password = decoded.slice(decoded.indexOf(':') + 1);
+  if (decoded.includes(':') && safeEqual(password, ACCESS_CODE)) return next();
+  res.set('WWW-Authenticate', 'Basic realm="Nexus Multi-IA Studio"');
+  return res.status(401).send('Acceso restringido.');
+});
 
 // Body size limit: 2MB max
 app.use(express.json({ limit: '2mb' }));

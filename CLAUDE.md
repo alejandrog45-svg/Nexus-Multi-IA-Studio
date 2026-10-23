@@ -38,3 +38,16 @@ Plan gratuito: ~20 solicitudes/dia por modelo (error 429 real). Repartir entre m
 - Real: proxy Express (/api/chat, /api/stream en codigo), clave solo en servidor, IndexedDB y sandbox en codigo. NO verificado en ejecucion: stream, imagen, IndexedDB, File System Access. Solo Gemini es IA real; ChatGPT/Claude/Meta = Modo Asistido manual.
 - Diagnostico, riesgos y plan de 11 mejoras: `docs/DIAGNOSTICO_2026-10-21.md`. Estado y siguiente prompt: `docs/estado-sesion-2026-10-21.md`.
 - Inventario de herramientas/cuentas (con correos): `.local/` (ignorado por git; no subir).
+
+## Revision 2026-10-21 (sesion en la nube, desde el celular)
+- Repo en `main` = rama de trabajo (`c51b87c`); sin PR ni deploy. `npm ci --legacy-peer-deps`, lint y build OK; `npm test`: 19 pruebas, 16 OK, 0 fallan (3 omitidas, E2E sin Chromium de W:).
+- URL publica: NO existe. Desde el contenedor no se puede exponer un puerto. La app necesita servidor Node (proxy Gemini), por lo que GitHub Pages no sirve. Opcion gratuita pendiente de decision: Render / Cloud Run con `GEMINI_API_KEY` como variable de entorno. Riesgo: URL publica = cualquiera gasta la cuota (~20/dia); anadir proteccion de acceso antes de publicar.
+- Nota: `E:` y `W:` no son accesibles desde la nube; la carpeta de conocimiento del negocio se actualiza al volver al PC.
+- Preparado para Render gratis (2026-10-21, sin desplegar): `render.yaml` define SOLO el servicio nuevo `nexus-multi-ia-studio` (plan free); no toca `oviedo-whatsapp-bot` ni `plataforma-anuncios-stg`. `server.ts` tiene portón opcional: con `ACCESS_CODE` todo pide contraseña (Basic, cualquier usuario) salvo `/api/health`. Variables `GEMINI_API_KEY` y `ACCESS_CODE` se escriben solo en el panel de Render. Pruebas: 17 OK, 0 fallan, 3 omitidas.
+
+## 2026-10-23: material `entregas_vigentes` (copia del otro proyecto; el original no se toca)
+- Carpeta `src/assets/images/entregas_vigentes/` (528 MB) y `BORRADORES/` (46): SIN seguimiento de git y NO estan en la rama del PR #1. Publicarlas en este repo publico es decision del dueno.
+- Referencias al otro proyecto cambiadas SOLO en 10 textos (manifiestos y READMEs de V1-V5): ver `docs/CAMBIO_REFERENCIAS_2026-10-23.md` (respaldo en `_respaldos/entregas-textos_2026-10-23`). Imagenes, nombres y hashes intactos; 19 sha256 verificados.
+- Variantes nuevas respetando estructura (carpeta por version + README + MANIFIESTO.json, V1-V5 intactas): V6 (pie sobre el flyer original, 0 px modificados; se genera con el Compositor de la app y su script `generar_v6.mjs`, que viven solo en el `main` local y no estan en esta rama) y **V7 = diseno completo** (`scripts/generar_v7.mjs`: plantilla V5 intacta + fotos reales de BORRADORES/VARIANTES_FONDO_2025; 6 piezas; 0 px modificados fuera de la zona de foto). El dueno pidio diseno COMPLETO: usar V7 como referencia; V6 es solo pie.
+- Prueba de regresion: `test/entregas.test.ts` (se omite si la carpeta no esta).
+- Material util: las fotos limpias son pocas (IMG-WA0065/66 y las de VARIANTES_FONDO_2025); los fotogramas de NUEVO MATERIAL llevan subtitulos superpuestos.
