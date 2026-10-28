@@ -52,3 +52,16 @@ Plan gratuito: ~20 solicitudes/dia por modelo (error 429 real). Repartir entre m
 - Real: proxy Express (/api/chat, /api/stream en codigo), clave solo en servidor, IndexedDB y sandbox en codigo. NO verificado en ejecucion: stream, imagen, IndexedDB, File System Access. Solo Gemini es IA real; ChatGPT/Claude/Meta = Modo Asistido manual.
 - Diagnostico, riesgos y plan de 11 mejoras: `docs/DIAGNOSTICO_2026-10-21.md`. Estado y siguiente prompt: `docs/estado-sesion-2026-10-21.md`.
 - Inventario de herramientas/cuentas (con correos): `.local/` (ignorado por git; no subir).
+
+## Auditoría documental 2026-10-27
+
+El mapa transversal de W: está en `W:\PROYECTOS CUENTA ALEJANDROG45\docs\INVENTARIO_DOCUMENTACION_2026-10-27.md`. Este repo conserva su `main` local y sus cambios sin publicar; no incorporar materiales grandes, no publicar secretos y no hacer push hasta cerrar la decisión de fuente oficial.
+
+## Auditoría individual 2026-10-27
+
+- Lint verificado con la herramienta Node de W: PASS, salida 0.
+- Suite verificada: 58/58 pruebas PASS, 0 fallos.
+- Build iniciado con Vite, pero no quedó confirmado dentro del límite de ejecución; no se considera exitoso por inferencia.
+- Rutas de servidor y referencias a materiales revisadas; no se detectaron referencias internas rotas en las pruebas.
+- `render.yaml` no está en esta copia local. Su incorporación desde la rama/PR remota sigue pendiente de decisión y validación.
+- No se hizo push, merge, deploy, movimiento, borrado, limpieza ni lectura de secretos.

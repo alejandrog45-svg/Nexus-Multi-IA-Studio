@@ -31,3 +31,14 @@
 - **Subido a la rama del PR #1** (`ccr-64f7adeb-uacsbu`, commit `f0db68d`, avance normal): solo CLAUDE.md (seccion nueva), `docs/CAMBIO_REFERENCIAS_2026-10-23.md`, `scripts/generar_v7.mjs` y `test/entregas.test.ts`. Sin imagenes ni videos. NO se subio `generar_v6.mjs` (depende del Compositor, que solo existe en main local). En esa rama: 20 pruebas OK, 5 omitidas (el material no esta alli), lint y build OK.
 - `main` sigue con **7 commits locales sin subir** (GitHub en `c51b87c`) y `.env.example` con claves reales sin tocar: el push de main espera a que el dueno las mueva a `.env.local`.
 - Pendiente: decidir si el material se publica (repo publico), `claude auth login`, 46 imagenes de BORRADORES, #9 Ollama, E2E a veces fallan por carga si quedan procesos huerfanos (matar headless antes de correr la suite).
+
+## Auditoría individual 2 — 2026-10-27
+
+- Alcance: solo esta copia local; no se movieron archivos ni se tocaron otros proyectos.
+- `npm run lint`: PASS, salida 0.
+- `npm test`: PASS, 58/58 pruebas, 0 fallos, salida 0.
+- `npm run build`: Vite inició y mostró únicamente la advertencia futura sobre `__dirname` en `vite.config.ts`; la consola agotó su espera antes de confirmar el cierre. `dist/` no cambió durante esta auditoría; el build queda pendiente de confirmación.
+- Referencias principales revisadas: `/api/providers`, `/api/chat`, `/api/stream`, `/api/health`, `/api/quota`, `BORRADORES/` y `entregas_vigentes/`. Las pruebas de referencias y seguridad pasan.
+- `render.yaml` no existe en la copia local actual. Está descrito en la paridad/PR, pero no se incorpora ni se publica sin decisión del dueño.
+- Estado Git conservado: `main` local está 8 commits por delante de `origin/main`; hay cambios/documentos/materiales sin seguimiento ya conocidos. No se hizo push, merge, deploy, limpieza ni cambio de rama.
+- Pendiente para el siguiente paso: confirmar build completo, decidir fuente oficial/PR, revisar Render y clasificar materiales grandes antes de cualquier publicación.
